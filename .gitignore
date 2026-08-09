@@ -1,0 +1,44 @@
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Python cache & build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Environment variables & credentials
+.env
+.env.*
+*.env
+
+# Data directories (keep directory structure via .gitkeep, ignore data dumps)
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/invalid/*
+!data/invalid/.gitkeep
+data/archive/*
+!data/archive/.gitkeep
+
+# Local SQLite databases
+*.db
+*.sqlite
+
+# Logs
+logs/*.log
+*.log
+!logs/.gitkeep
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# IDE & Editor configs
+.vscode/
+.idea/
+*.swp
