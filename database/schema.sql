@@ -1,5 +1,5 @@
 -- ============================================================================
--- RetailLens PostgreSQL Analytical Database Schema DDL (Phase 3)
+-- RetailLens PostgreSQL Analytical Database Schema DDL (Phase 6 Milestone 1)
 -- ============================================================================
 
 -- Drop existing tables and views if re-initialization is required
@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS fact_sales CASCADE;
 DROP TABLE IF EXISTS dim_customer CASCADE;
 DROP TABLE IF EXISTS dim_product CASCADE;
 DROP TABLE IF EXISTS raw_transactions CASCADE;
+DROP TABLE IF EXISTS etl_watermarks CASCADE;
 
 -- ----------------------------------------------------------------------------
 -- 1. Raw / Staging Table: raw_transactions
@@ -75,11 +76,24 @@ CREATE TABLE fact_sales (
     country VARCHAR(50) NOT NULL,
     is_cancellation BOOLEAN NOT NULL DEFAULT FALSE,
     revenue_bucket VARCHAR(30) NOT NULL,
-    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_fact_sales_natural_key UNIQUE (invoice_no, stock_code, invoice_timestamp)
 );
 
 -- ----------------------------------------------------------------------------
--- 5. Analytical B-Tree Indexes
+-- 5. Incremental Watermark & File Audit Table: etl_watermarks
+-- ----------------------------------------------------------------------------
+CREATE TABLE etl_watermarks (
+    watermark_id SERIAL PRIMARY KEY,
+    file_path TEXT NOT NULL,
+    file_hash VARCHAR(64) NOT NULL UNIQUE,
+    high_watermark_timestamp TIMESTAMP,
+    rows_processed INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ----------------------------------------------------------------------------
+-- 6. Analytical B-Tree Indexes
 -- ----------------------------------------------------------------------------
 CREATE INDEX idx_fact_sales_invoice_no ON fact_sales(invoice_no);
 CREATE INDEX idx_fact_sales_customer_id ON fact_sales(customer_id);
@@ -90,7 +104,7 @@ CREATE INDEX idx_fact_sales_year_month ON fact_sales(invoice_year, invoice_month
 CREATE INDEX idx_fact_sales_cancellation ON fact_sales(is_cancellation);
 
 -- ----------------------------------------------------------------------------
--- 6. Analytical Views
+-- 7. Analytical Views
 -- ----------------------------------------------------------------------------
 CREATE VIEW view_monthly_sales_summary AS
 SELECT 

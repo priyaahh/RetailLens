@@ -3,7 +3,8 @@ pipeline.py
 -----------
 Production-grade ETL Orchestration Pipeline for RetailLens.
 Coordinates reading, schema validation, data cleaning, feature transformation,
-and database persistence while tracking timing metrics, row execution statistics, and structured logging.
+and database persistence while tracking timing metrics, row execution statistics, structured logging,
+watermark tracking, and idempotent execution.
 Follows SOLID principles (Single Responsibility, Open/Closed, Dependency Injection).
 """
 
@@ -22,6 +23,7 @@ from ingestion.loader import DatabaseLoader, LoadResult
 from ingestion.reader import DataFileReader
 from ingestion.transformer import DataTransformer
 from ingestion.validator import DataValidator, SchemaValidationError, ValidationReport
+from ingestion.watermark import WatermarkManager
 
 # Configure module logger
 logger = logging.getLogger(__name__)
@@ -34,6 +36,8 @@ class PipelineConfig:
     clean_data: bool = True
     transform_data: bool = True
     load_data: bool = False  # Set to True to persist directly into PostgreSQL
+    incremental: bool = True  # Set to True for watermark-based incremental loading
+    check_watermark: bool = True  # Set to True to check file hashes for idempotency
     output_dir: str = "data/processed"
     target_table: str = "fact_sales"
 
@@ -45,7 +49,9 @@ class PipelineResult:
     start_time: str = ""
     end_time: str = ""
     duration_seconds: float = 0.0
+    file_hash: str = ""
     total_rows_read: int = 0
+    skipped_watermark_rows: int = 0
     valid_rows: int = 0
     invalid_rows: int = 0
     cleaned_rows: int = 0
@@ -60,7 +66,7 @@ class PipelineResult:
 class ETLPipeline:
     """
     Central ETL Pipeline Orchestrator.
-    Decoupled orchestrator injecting reader, validator, cleaner, transformer, and loader dependencies.
+    Decoupled orchestrator injecting reader, validator, cleaner, transformer, loader, and watermark dependencies.
     """
 
     def __init__(
@@ -70,6 +76,7 @@ class ETLPipeline:
         cleaner: Optional[DataCleaner] = None,
         transformer: Optional[DataTransformer] = None,
         loader: Optional[DatabaseLoader] = None,
+        watermark_mgr: Optional[WatermarkManager] = None,
         config: Optional[PipelineConfig] = None,
     ):
         """Dependency Injection constructor allowing mock replacements in unit tests."""
@@ -78,6 +85,7 @@ class ETLPipeline:
         self.cleaner = cleaner or DataCleaner()
         self.transformer = transformer or DataTransformer()
         self.loader = loader or DatabaseLoader()
+        self.watermark_mgr = watermark_mgr or WatermarkManager()
         self.config = config or PipelineConfig()
 
     def run(self, file_path: str) -> PipelineResult:
@@ -98,111 +106,111 @@ class ETLPipeline:
         logger.info("==================================================")
         logger.info("🚀 Starting RetailLens ETL Pipeline Execution")
         logger.info("Target File: %s", file_path)
-        logger.info("Configuration: %s", self.config)
         logger.info("==================================================")
 
         try:
-            # -------------------------------------------------------------
-            # Stage 1: Extraction / Reading
-            # -------------------------------------------------------------
-            logger.info("Stage 1/5: Executing File Extraction...")
-            raw_df = self.reader.read_file(file_path)
-            result.total_rows_read = len(raw_df)
-            logger.info("Extract Stage Complete. Rows Read: %d", result.total_rows_read)
+            # 0. Watermark & File Hash Inspection
+            file_hash = self.watermark_mgr.compute_file_hash(file_path)
+            result.file_hash = file_hash
 
-            current_df = raw_df
+            if self.config.check_watermark and self.watermark_mgr.is_file_processed(file_hash):
+                logger.info("File '%s' (Hash: %s...) was already processed. Idempotent check active.", Path(file_path).name, file_hash[:10])
 
-            # -------------------------------------------------------------
-            # Stage 2: Schema & Data Quality Validation
-            # -------------------------------------------------------------
-            if self.config.validate_data:
-                logger.info("Stage 2/5: Executing Schema & Data Quality Validation...")
-                val_report, validated_df = self.validator.validate(current_df)
-                result.validation_report = val_report
-                result.valid_rows = val_report.valid_rows
-                result.invalid_rows = val_report.invalid_rows
-                current_df = validated_df
-                logger.info(
-                    "Validation Stage Complete. Valid Rows: %d | Invalid Rows: %d",
-                    result.valid_rows,
-                    result.invalid_rows,
+            # STAGE 1: Data Extraction / Reading
+            logger.info("Stage 1: Reading dataset file...")
+            df_raw = self.reader.read_file(file_path)
+            result.total_rows_read = len(df_raw)
+
+            # Incremental Watermark Filtering
+            high_watermark_ts = None
+            if self.config.incremental:
+                high_watermark_ts = self.watermark_mgr.get_high_watermark_timestamp(self.config.target_table)
+                df_raw, result.skipped_watermark_rows = self.watermark_mgr.filter_incremental_dataframe(
+                    df_raw, high_watermark_ts, timestamp_col="InvoiceDate"
                 )
-            else:
-                logger.info("Stage 2/5: Validation bypassed by configuration.")
-                result.valid_rows = len(current_df)
 
-            # -------------------------------------------------------------
-            # Stage 3: Data Cleaning & Deduplication
-            # -------------------------------------------------------------
+            if df_raw.empty:
+                logger.info("No new records to process after incremental watermark filtering.")
+                result.status = "SUCCESS"
+                result.end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                result.duration_seconds = round(time.time() - start_ts, 3)
+                return result
+
+            # STAGE 2: Data Validation
+            df_valid = df_raw
+            if self.config.validate_data:
+                logger.info("Stage 2: Executing data quality validation...")
+                report = self.validator.validate(df_raw)
+                result.validation_report = report
+                result.valid_rows = report.passed_rows
+                result.invalid_rows = report.failed_rows
+
+                if not report.is_valid:
+                    error_msg = f"Data validation failed! Passed: {report.passed_rows}, Failed: {report.failed_rows}"
+                    logger.error(error_msg)
+                    result.status = "FAILED"
+                    result.error_message = error_msg
+                    result.end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    result.duration_seconds = round(time.time() - start_ts, 3)
+                    raise SchemaValidationError(error_msg)
+
+            # STAGE 3: Data Cleaning
+            df_clean = df_valid
             if self.config.clean_data:
-                logger.info("Stage 3/5: Executing Data Cleaning & Imputation...")
-                cleaned_df, clean_stats = self.cleaner.clean(current_df)
-                result.cleaned_rows = len(cleaned_df)
-                current_df = cleaned_df
-                logger.info("Cleaning Stage Complete. Output Rows: %d", result.cleaned_rows)
-            else:
-                logger.info("Stage 3/5: Cleaning bypassed by configuration.")
-                result.cleaned_rows = len(current_df)
+                logger.info("Stage 3: Executing data cleaning and sanitization...")
+                df_clean, clean_stats = self.cleaner.clean(df_valid)
+                result.cleaned_rows = len(df_clean)
 
-            # -------------------------------------------------------------
-            # Stage 4: Feature Engineering & Transformation
-            # -------------------------------------------------------------
+            # STAGE 4: Feature Transformation
+            df_transformed = df_clean
             if self.config.transform_data:
-                logger.info("Stage 4/5: Executing Feature Transformations...")
-                transformed_df = self.transformer.transform(current_df)
-                result.transformed_rows = len(transformed_df)
-                current_df = transformed_df
-                logger.info("Transformation Stage Complete. Final Features: %d", len(current_df.columns))
-            else:
-                logger.info("Stage 4/5: Transformation bypassed by configuration.")
-                result.transformed_rows = len(current_df)
+                logger.info("Stage 4: Executing feature engineering transformations...")
+                df_transformed = self.transformer.transform(df_clean)
+                result.transformed_rows = len(df_transformed)
 
-            # -------------------------------------------------------------
-            # Stage 5: Database Bulk Persistence & Staging Save
-            # -------------------------------------------------------------
+            # STAGE 5: Save Processed File & Load into Database
             os.makedirs(self.config.output_dir, exist_ok=True)
-            input_filename = Path(file_path).stem
-            output_path = os.path.join(self.config.output_dir, f"processed_{input_filename}.csv")
-            current_df.to_csv(output_path, index=False)
+            output_filename = f"processed_{Path(file_path).stem}.csv"
+            output_path = os.path.join(self.config.output_dir, output_filename)
+
+            df_transformed.to_csv(output_path, index=False)
             result.output_file_path = output_path
-            logger.info("Saved processed staging dataset to: %s", output_path)
+            logger.info("Saved transformed dataset to: %s", output_path)
 
             if self.config.load_data:
-                logger.info("Stage 5/5: Persisting processed data into PostgreSQL table '%s'...", self.config.target_table)
-                load_res = self.loader.load(current_df, table_name=self.config.target_table)
+                logger.info("Stage 5: Executing database persistence loading...")
+                load_res = self.loader.load(
+                    df_transformed, table_name=self.config.target_table, if_exists="append", idempotent=True
+                )
                 result.load_result = load_res
                 result.rows_loaded = load_res.rows_inserted
-                if load_res.status == "FAILED":
-                    raise Exception(load_res.error_message)
 
-            # Mark Status
+                # Record Watermark Entry
+                max_file_ts = pd.to_datetime(df_transformed["InvoiceDate"]).max() if "InvoiceDate" in df_transformed.columns else None
+                max_ts_val = max_file_ts.to_pydatetime() if pd.notna(max_file_ts) else high_watermark_ts
+                self.watermark_mgr.record_watermark(
+                    file_path=file_path,
+                    file_hash=file_hash,
+                    high_watermark_ts=max_ts_val,
+                    rows_processed=result.rows_loaded,
+                )
+
             result.status = "SUCCESS"
+            result.end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            result.duration_seconds = round(time.time() - start_ts, 3)
 
-        except SchemaValidationError as e:
-            error_msg = f"Pipeline halted due to critical schema failure: {str(e)}"
-            logger.error(error_msg)
-            result.status = "FAILED"
-            result.error_message = error_msg
+            logger.info("==================================================")
+            logger.info("✅ Pipeline Completed Successfully in %.3f seconds", result.duration_seconds)
+            logger.info("Summary: Read=%d | Skipped=%d | Valid=%d | Transformed=%d | Loaded=%d",
+                        result.total_rows_read, result.skipped_watermark_rows, result.valid_rows, result.transformed_rows, result.rows_loaded)
+            logger.info("==================================================")
+
+            return result
 
         except Exception as e:
-            error_msg = f"Pipeline execution failed unexpectedly: {str(e)}"
-            logger.error(error_msg, exc_info=True)
+            logger.error("Pipeline execution failed: %s", str(e), exc_info=True)
             result.status = "FAILED"
-            result.error_message = error_msg
-
-        finally:
-            end_ts = time.time()
+            result.error_message = str(e)
             result.end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            result.duration_seconds = round(end_ts - start_ts, 4)
-
-            logger.info("==================================================")
-            logger.info("📊 Pipeline Execution Summary")
-            logger.info("Status: %s", result.status)
-            logger.info("Duration: %.4f seconds", result.duration_seconds)
-            logger.info("Total Rows Read: %d", result.total_rows_read)
-            logger.info("Transformed Rows: %d", result.transformed_rows)
-            logger.info("Rows Loaded to DB: %d", result.rows_loaded)
-            logger.info("Output Destination: %s", result.output_file_path)
-            logger.info("==================================================")
-
-        return result
+            result.duration_seconds = round(time.time() - start_ts, 3)
+            return result

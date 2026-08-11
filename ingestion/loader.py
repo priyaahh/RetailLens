@@ -3,15 +3,16 @@ loader.py
 ---------
 Production-grade Database Loading & Persistence engine for RetailLens.
 Manages bulk batch insertion into PostgreSQL using SQLAlchemy transaction contexts,
-atomic commit/rollback handling, column name mapping, and connection pooling.
+atomic commit/rollback handling, column name mapping, connection pooling, and idempotent deduplication.
 """
 
 import logging
 import time
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 import pandas as pd
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from database.connection import get_db_engine
@@ -25,6 +26,7 @@ class LoadResult:
     status: str = "PENDING"  # SUCCESS, FAILED
     table_name: str = ""
     rows_inserted: int = 0
+    rows_skipped_duplicate: int = 0
     duration_seconds: float = 0.0
     error_message: Optional[str] = None
 
@@ -63,6 +65,7 @@ class DatabaseLoader:
         table_name: str = "fact_sales",
         if_exists: str = "append",
         chunksize: int = 1000,
+        idempotent: bool = True,
     ) -> LoadResult:
         """
         Executes atomic batch loading of DataFrame into specified database table.
@@ -71,6 +74,7 @@ class DatabaseLoader:
         :param table_name: Target database table name.
         :param if_exists: How to handle existing table ('append', 'replace', 'fail').
         :param chunksize: Number of rows to insert per bulk SQL batch.
+        :param idempotent: If True, filters out duplicate natural keys already present in table.
         :return: LoadResult object containing status and row metrics.
         """
         start_ts = time.time()
@@ -88,7 +92,18 @@ class DatabaseLoader:
             # 1. Map DataFrame columns to target DB schema names
             db_df = self._map_columns_to_schema(df)
 
-            # 2. Execute Atomic Transaction
+            # 2. Idempotent Deduplication against existing table
+            if idempotent and if_exists == "append":
+                db_df, result.rows_skipped_duplicate = self._deduplicate_against_database(db_df, table_name)
+
+            if db_df.empty:
+                logger.info("All records in batch already exist in '%s'. Skipped %d duplicate records.", table_name, result.rows_skipped_duplicate)
+                result.status = "SUCCESS"
+                result.rows_inserted = 0
+                result.duration_seconds = round(time.time() - start_ts, 3)
+                return result
+
+            # 3. Execute Atomic Transaction
             with self.engine.begin() as conn:
                 db_df.to_sql(
                     name=table_name,
@@ -99,37 +114,62 @@ class DatabaseLoader:
                     method="multi",  # Combines multiple rows into a single multi-row SQL INSERT statement
                 )
 
-            end_ts = time.time()
             result.status = "SUCCESS"
             result.rows_inserted = len(db_df)
-            result.duration_seconds = round(end_ts - start_ts, 4)
-
+            result.duration_seconds = round(time.time() - start_ts, 3)
             logger.info(
-                "Database load successful! Target: '%s' | Rows Inserted: %d | Time: %.4fs",
-                table_name,
+                "Successfully persisted %d rows into '%s' in %.3f seconds (Skipped duplicates: %d).",
                 result.rows_inserted,
+                table_name,
                 result.duration_seconds,
+                result.rows_skipped_duplicate,
             )
+            return result
 
         except Exception as e:
-            end_ts = time.time()
+            logger.error("Failed to load DataFrame into table '%s': %s", table_name, str(e), exc_info=True)
             result.status = "FAILED"
-            result.duration_seconds = round(end_ts - start_ts, 4)
-            result.error_message = f"Database load transaction failed and was rolled back: {str(e)}"
-            logger.error(result.error_message, exc_info=True)
-
-        return result
+            result.error_message = str(e)
+            result.duration_seconds = round(time.time() - start_ts, 3)
+            return result
 
     def _map_columns_to_schema(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Renames DataFrame columns to match PostgreSQL target table DDL schema."""
+        """Renames DataFrame columns to match database schema conventions."""
         mapped_df = df.copy()
-
-        # Rename matching columns
-        rename_dict = {col: self.COLUMN_MAPPING[col] for col in mapped_df.columns if col in self.COLUMN_MAPPING}
-        mapped_df = mapped_df.rename(columns=rename_dict)
-
-        # Drop any leftover columns not in destination schema mapping
-        valid_cols = list(self.COLUMN_MAPPING.values())
-        mapped_df = mapped_df[[col for col in mapped_df.columns if col in valid_cols]]
-
+        mapped_columns = {col: self.COLUMN_MAPPING[col] for col in df.columns if col in self.COLUMN_MAPPING}
+        mapped_df = mapped_df.rename(columns=mapped_columns)
         return mapped_df
+
+    def _deduplicate_against_database(self, db_df: pd.DataFrame, table_name: str) -> Tuple[pd.DataFrame, int]:
+        """Filters out records whose composite natural keys exist in table_name."""
+        key_cols = ["invoice_no", "stock_code", "invoice_timestamp"]
+        if not all(col in db_df.columns for col in key_cols):
+            return db_df, 0
+
+        try:
+            query = f"SELECT invoice_no, stock_code, invoice_timestamp FROM {table_name};"
+            with self.engine.connect() as conn:
+                existing_df = pd.read_sql_query(query, conn)
+
+            if existing_df.empty:
+                return db_df, 0
+
+            # Convert timestamp to string/datetime format matching existing_df
+            existing_df["invoice_timestamp"] = pd.to_datetime(existing_df["invoice_timestamp"])
+            db_df["invoice_timestamp"] = pd.to_datetime(db_df["invoice_timestamp"])
+
+            # Left anti-join to isolate unique non-existing records
+            merged = db_df.merge(
+                existing_df[key_cols].drop_duplicates(),
+                on=key_cols,
+                how="left",
+                indicator=True,
+            )
+            unique_df = merged[merged["_merge"] == "left_only"].drop(columns=["_merge"])
+
+            skipped_count = len(db_df) - len(unique_df)
+            return unique_df, skipped_count
+
+        except Exception as e:
+            logger.debug("Could not deduplicate against existing table (may be new table): %s", str(e))
+            return db_df, 0
