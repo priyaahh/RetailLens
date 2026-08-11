@@ -1,6 +1,6 @@
-# 🎯 Master Technical Interview Q&A Bank
+# 🎯 Master Technical Interview Q&A Bank (Phases 1–5)
 
-This document contains a production-grade interview question bank derived from **Phases 1, 2, 3 & 4**. Use this guide to prepare for technical interview rounds across Data Engineering, Software Engineering, Backend Development, SQL, System Design, and Business Intelligence.
+This document contains a production-grade interview question bank derived from **Phases 1, 2, 3, 4 & 5**. Use this guide to prepare for technical interview rounds across Data Engineering, Software Engineering, Backend Development, SQL, System Design, DevOps, and Business Intelligence.
 
 ---
 
@@ -10,80 +10,70 @@ This document contains a production-grade interview question bank derived from *
 **Model Answer**:
 Modular architecture is a design pattern where an application is decomposed into independent, self-contained modules—each responsible for a single business capability. In RetailLens, we separate concerns across distinct directories: `ingestion/` handles data reading and file parsing, `database/` manages database connections and queries, `analytics/` processes metric calculations and ML models, and `app/` controls the UI. This ensures high cohesion within modules and loose coupling between modules, making the system testable and easy to maintain.
 
+### Q2: What is the principle of "Separation of Concerns" (SoC)?
+**Model Answer**:
+Separation of Concerns is a core software engineering principle stating that a program should be split into distinct sections, with each section addressing a separate concern. In RetailLens, UI code inside `app/` never executes raw SQL queries or data validation routines directly; instead, it calls functions exposed by the `analytics/` and `database/` modules. This prevents UI changes from breaking database operations or data processing pipelines.
+
 ---
 
-## 💻 2. Analytics Engine, Repository Pattern & BI Architecture (Phase 4)
+## 🐘 2. PostgreSQL, Data Modeling & SQL Analytics (Phase 3)
+
+### Q22: What is a Fact Table, a Dimension Table, and the Grain of a fact table?
+* **Strong Answer**: A Fact Table (`fact_sales`) contains quantitative numerical measurements (revenue, quantity). A Dimension Table (`dim_customer`, `dim_product`) contains descriptive context attributes. The Grain defines the level of detail of a single row. In RetailLens, the grain of `fact_sales` is **one row per transaction invoice line item**.
+* **Keywords**: `Fact Table`, `Dimension Table`, `Table Grain`, `Line-Item Level`.
+
+### Q24: What is the logical execution order of a SQL query, and why does `WHERE` come before `HAVING`?
+* **Strong Answer**: SQL queries execute in order: `FROM/JOIN` $\rightarrow$ `WHERE` $\rightarrow$ `GROUP BY` $\rightarrow$ `HAVING` $\rightarrow$ `SELECT` $\rightarrow$ `WINDOW` $\rightarrow$ `ORDER BY` $\rightarrow$ `LIMIT`. `WHERE` filters individual rows **before** aggregation; `HAVING` filters group summaries **after** aggregation.
+* **Keywords**: `Logical Execution Order`, `WHERE vs HAVING`, `Pre-aggregation Filtering`.
+
+---
+
+## 💻 3. Analytics Engine, Repository Pattern & BI Architecture (Phase 4)
 
 ### Q31: What is the Repository Pattern, and why is it used in RetailLens?
-* **Strong Answer**: 
-  The **Repository Pattern** abstracts database data access behind a clean domain interface (`AnalyticsRepository`). In RetailLens, it isolates all SQL query execution, parameterization, and SQLAlchemy connection logic from the application service and UI layers. This decouples UI view components from database schemas and enables unit testing analytics code using mocks or in-memory SQLite databases without needing an active cloud database connection.
+* **Strong Answer**: The Repository Pattern (`AnalyticsRepository`) isolates all database data access queries behind domain methods. It decouples UI components from database schemas, centralizes query parameterization against SQL injection, and enables unit testing using mocks/in-memory SQLite databases without needing an active cloud database connection.
 * **Keywords**: `Repository Pattern`, `Data Access Layer`, `Decoupled Architecture`, `Testability`.
-* **Possible Follow-up**: *How do you pass UI filter selections to your repository methods?*
+
+### Q32: Why compute summary metrics directly in SQL instead of in-memory Pandas aggregations?
+* **Strong Answer**: Executing aggregations inside PostgreSQL (`SUM`, `COUNT`, `AOV`) uses indexed B-Tree scans and returns a single 8-byte scalar result over the wire. In-memory Pandas aggregation requires fetching 500,000 raw transaction rows over the network, wasting bandwidth and saturating server RAM. Direct SQL aggregation achieves a **99.9% reduction in network payload and RAM footprint**.
+* **Keywords**: `Database Pushdown`, `SQL Aggregation`, `Network Payload Optimization`.
 
 ---
 
-### Q32: Why compute summary metrics directly in SQL instead of doing in-memory Pandas aggregations?
+## ⚙️ 4. Production Hardening, Security, CI/CD & Deployment (Phase 5)
+
+### Q41: How do you handle environment configuration safely across development, testing, staging, and production environments?
+* **Strong Answer**: We created a centralized configuration engine (`AppConfig` in `config/app_config.py`). Instead of reading loose `os.getenv()` calls across components, `AppConfig` validates configuration types and enforces profile rules (`development`, `testing`, `staging`, `production`). In `production`, `AppConfig` mandates complete database credentials (`DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`) and rejects default dev keys, raising `ConfigurationError` before app startup.
+* **Keywords**: `Centralized Configuration`, `Environment Profiles`, `Strict Validation`, `AppConfig`.
+
+### Q42: How do you prevent secret keys and database passwords from being logged or leaked in error stack traces?
+* **Strong Answer**: We attach a `SensitiveDataFilter` to all logger handlers in `config/logging_config.py`. The filter uses regex patterns to redact passwords (`password='***MASKED***'`), connection URLs (`postgresql://user:***MASKED***@host`), and secret keys before log entries are written to stdout or `logs/retaillens.log`.
+* **Keywords**: `SensitiveDataFilter`, `Credential Masking`, `Log Security`, `Regex Sanitization`.
+
+### Q43: How do you implement exponential backoff retries for transient database failures while failing fast on permanent errors?
+* **Strong Answer**: We implemented `execute_with_retry()` in `database/retry.py`. For retryable transient errors (`TransientDatabaseError`, connection timeouts), it retries execution up to 3 times with exponentially increasing delays (0.1s, 0.2s, 0.4s). For non-retryable constraint violations or syntax errors (`PermanentDatabaseError`), it fails fast immediately without executing useless retries.
+* **Keywords**: `Exponential Backoff`, `Transient Database Error`, `Fail-Fast`, `Resilience`.
+
+### Q44: How does your path traversal validation prevent malicious file uploads?
+* **Strong Answer**: `DataFileReader.validate_file_metadata()` inspects the input file path for path traversal sequences (`..`). If detected, it immediately raises a `ValueError` before opening the path or reading bytes, preventing attackers from reading sensitive system files outside the target directory.
+* **Keywords**: `Path Traversal Prevention`, `Input Validation`, `Defensive File Reading`.
+
+### Q45: What is the purpose of the GitHub Actions CI pipeline in RetailLens?
+* **Strong Answer**: Our GitHub Actions workflow (`.github/workflows/ci.yml`) triggers automatically on every push or pull request to `main` and `dev`. It sets up Python 3.10, installs dependencies, and runs `python -m unittest discover tests`. If any test fails, the workflow blocks code merging, ensuring broken code never reaches production.
+* **Keywords**: `GitHub Actions`, `Continuous Integration`, `Automated Testing`, `Pull Request Gate`.
+
+### Q46: How is RetailLens containerized for production using Docker?
+* **Strong Answer**: We authored a multi-stage `Dockerfile` based on `python:3.10-slim`. It sets up working directories, installs system dependencies (`libpq-dev`), copies requirements, exposes port `8501`, and includes an HTTP healthcheck assertion (`curl -f http://localhost:8501/_stcore/health`). `.dockerignore` excludes virtual environments, local logs, secrets, and test artifacts.
+* **Keywords**: `Docker Containerization`, `Multi-Stage Build`, `HTTP Healthcheck`, `.dockerignore`.
+
+### Q47: What is the difference between `@st.cache_resource` and `@st.cache_data` in Streamlit?
+* **Strong Answer**: `@st.cache_resource` caches global, un-pickled long-lived objects (like SQLAlchemy connection pools or `AnalyticsService` instances) shared across all user sessions. `@st.cache_data(ttl=300)` caches read-only serialized data objects (like query DataFrames) with a 5-minute time-to-live.
+* **Keywords**: `@st.cache_resource`, `@st.cache_data`, `Streamlit Caching`, `Time-To-Live`.
+
+### Q48: How would you scale RetailLens to handle multi-terabyte datasets and thousands of concurrent users?
 * **Strong Answer**: 
-  Executing aggregations directly inside PostgreSQL (`SUM`, `COUNT`, `AOV`) uses indexed B-Tree scans and returns a single 8-byte scalar result or a small summary dataset over the network. In-memory Pandas aggregation requires fetching 500,000 raw transaction line items over the wire first, wasting network bandwidth, saturating web server RAM, and creating Out-of-Memory (OOM) crash risks. Direct SQL aggregation achieves a **99.9% reduction in network payload and RAM footprint**.
-* **Keywords**: `Database Pushdown`, `SQL Aggregation`, `Network Payload Optimization`, `RAM Footprint`.
-
----
-
-### Q33: How does the `InsightEngine` generate automated business observations?
-* **Strong Answer**: 
-  `InsightEngine` evaluates calculated KPI metrics and repository summary DataFrames against configurable operational risk thresholds (e.g. `cancellation_rate >= 5.0%`, `guest_ratio >= 40.0%`). When a metric crosses a threshold, the engine constructs a structured `Insight` dataclass containing the category (`CANCELLATION`, `TREND`, `PRODUCT`), title, description, severity level (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`), metric value, threshold limit, and an actionable business recommendation.
-* **Keywords**: `Insight Engine`, `Threshold Evaluation`, `Structured Observations`, `Severity Levels`, `Actionable Recommendations`.
-
----
-
-### Q34: What is the role of the `AnalyticsService` layer?
-* **Strong Answer**: 
-  `AnalyticsService` acts as the Application Service Layer facade between PostgreSQL data access and the Streamlit UI. It composes `AnalyticsRepository` data queries, `KPIEngine` metric calculations, and `InsightEngine` observations into high-level business methods (`get_dashboard_summary()`, `get_cancellation_analysis()`). Streamlit UI components call these service methods exclusively, adhering strictly to **Separation of Concerns (SoC)**.
-* **Keywords**: `Application Service Layer`, `Facade Pattern`, `Separation of Concerns`, `Orchestration`.
-
----
-
-### Q35: How does Streamlit caching work, and what is the difference between `@st.cache_resource` and `@st.cache_data`?
-* **Strong Answer**: 
-  Streamlit re-runs Python scripts top-to-bottom on every user interaction. Caching prevents re-executing heavy database queries or connection setups:
-  * `@st.cache_resource`: Caches global, un-pickled, long-lived resources (like SQLAlchemy database engines or `AnalyticsService` instances) shared across all user sessions.
-  * `@st.cache_data`: Caches serialized data objects (like query DataFrames) with a configurable time-to-live (`ttl=300` seconds).
-* **Keywords**: `@st.cache_resource`, `@st.cache_data`, `Time-To-Live (TTL)`, `Script Execution Cycle`.
-
----
-
-### Q36: What is SQL Filter Pushdown, and why is it essential for dashboard performance?
-* **Strong Answer**: 
-  SQL Filter Pushdown passes user sidebar filter choices (`Start Date`, `Country`, `Customer Type`) directly into parameterized PostgreSQL SQL queries (`WHERE country = :country AND invoice_timestamp >= :start_date`). This forces PostgreSQL to execute filtering at the database layer, returning only matching summary datasets over the network rather than downloading raw tables and filtering in Python memory.
-* **Keywords**: `SQL Pushdown`, `Parameterized WHERE Clauses`, `Network Latency`, `RAM Optimization`.
-
----
-
-### Q37: How do you unit test a database-dependent analytics service without requiring a live Neon cloud database?
-* **Strong Answer**: 
-  We use **Mock Objects** (`unittest.mock.MagicMock`) and **In-Memory SQLite Databases** (`sqlite:///:memory:`). Unit tests inject mock repositories into `KPIEngine`, `InsightEngine`, and `AnalyticsService`, returning deterministic test DataFrames or scalars to verify calculation formulas and threshold logic instantly in local CI/CD pipelines without network or cloud database dependencies.
-* **Keywords**: `Mock Objects`, `In-Memory SQLite`, `Unit Testing`, `Dependency Injection`, `CI/CD`.
-
----
-
-### Q38: How does your dashboard handle database downtime or connection failures?
-* **Strong Answer**: 
-  Our main application entry point (`app/main.py`) wraps service initialization and query calls inside defensive `try/except` blocks. If PostgreSQL is unavailable or credentials are bad, Streamlit catches the error, logs the stack trace internally, and displays a user-friendly error card (`"⚠️ Unable to connect to database. Please check configuration"`). This prevents exposing database connection strings, passwords, or technical stack traces to end users.
-* **Keywords**: `Graceful Error Handling`, `Defensive Exception Catching`, `Credential Masking`, `User Experience`.
-
----
-
-### Q39: How do `COALESCE` and `NULLIF` prevent runtime errors in SQL KPI metrics?
-* **Strong Answer**: 
-  `COALESCE(val, fallback)` replaces `NULL` query results with a default value (e.g., `COALESCE(SUM(total_amount), 0.00)` returns `0.00` on an empty database). `NULLIF(val1, val2)` returns `NULL` when `val1 == val2`. Placing `NULLIF(COUNT(DISTINCT invoice_no), 0)` in denominator division calculations prevents catastrophic **division-by-zero** database runtime exceptions when tables contain zero rows.
-* **Keywords**: `COALESCE`, `NULLIF`, `Division-by-Zero Protection`, `Defensive SQL`.
-
----
-
-### Q40: How would you scale the analytics architecture from a single PostgreSQL database to an enterprise data platform?
-* **Strong Answer**: 
-  To scale to petabyte datasets and thousands of concurrent BI users:
-  1. **Semantic Layer (dbt / Cube.js)**: Introduce **dbt** (data build tool) to model raw warehouse data into star-schema analytical tables and pre-computed materialized views.
-  2. **Cloud Data Warehouse (Snowflake / BigQuery)**: Replace single-node PostgreSQL with a columnar cloud data warehouse for massively parallel processing (MPP) analytical queries.
-  3. **REST / GraphQL Analytics API**: Wrap `AnalyticsService` inside a FastAPI web service, exposing cached JSON endpoints consumed by multiple frontend clients (Streamlit, React, mobile apps).
-* **Keywords**: `dbt Semantic Layer`, `Snowflake Data Warehouse`, `MPP Architecture`, `FastAPI Analytics Microservice`.
+  1. **MPP Data Warehouse**: Migrate PostgreSQL storage to a columnar data warehouse (Snowflake / BigQuery).
+  2. **dbt Semantic Modeling**: Pre-compute analytical models and materialized views using dbt.
+  3. **FastAPI Microservice + Redis**: Move `AnalyticsService` to a standalone FastAPI REST microservice backed by Redis caching.
+  4. **Horizontal Pod Autoscaling**: Deploy Streamlit and API containers on Kubernetes behind an AWS ALB load balancer.
+* **Keywords**: `Snowflake`, `dbt`, `FastAPI Microservice`, `Redis Cache`, `Kubernetes HPA`.

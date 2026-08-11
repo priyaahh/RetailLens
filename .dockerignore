@@ -1,0 +1,36 @@
+# Docker build ignore rules
+.venv/
+venv/
+ENV/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Environment files with secrets
+.env
+.env.*
+*.env
+
+# Local data & logs
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/invalid/*
+!data/invalid/.gitkeep
+data/archive/*
+!data/archive/.gitkeep
+logs/*.log
+*.log
+
+# Git & IDE metadata
+.git/
+.gitignore
+.github/
+.vscode/
+.idea/
+*.swp
+*.DS_Store

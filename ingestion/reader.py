@@ -2,7 +2,8 @@
 reader.py
 ---------
 Production-grade file reader module responsible for ingesting tabular retail datasets
-(CSV and Excel formats) with encoding resilience, file size checks, and structural header validation.
+(CSV and Excel formats) with encoding resilience, file size checks, path sanitization,
+and structural header validation.
 """
 
 import logging
@@ -16,10 +17,6 @@ from config.schema_config import IngestionConfig
 
 # Configure module-level logger
 logger = logging.getLogger(__name__)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
 
 
 class DataFileReader:
@@ -30,14 +27,20 @@ class DataFileReader:
 
     def validate_file_metadata(self, file_path: Union[str, Path]) -> Path:
         """
-        Validates file existence, extension, and file size boundaries.
+        Validates path security, file existence, extension, and file size boundaries.
 
         :param file_path: Absolute or relative path to the target file.
         :return: Validated Path object.
         :raises FileNotFoundError: If the file does not exist.
-        :raises ValueError: If extension is unsupported or file size exceeds limits.
+        :raises ValueError: If extension is unsupported, path is invalid, or file size exceeds limits.
         """
-        path = Path(file_path)
+        raw_str = str(file_path)
+        if ".." in raw_str:
+            error_msg = f"Path traversal characters detected in file path: '{raw_str}'"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        path = Path(file_path).resolve()
 
         # 1. Existence check
         if not path.exists():
@@ -99,52 +102,47 @@ class DataFileReader:
         """
         Reads CSV files using multi-encoding fallback to handle legacy/special characters.
 
-        :param path: Path object pointing to CSV file.
-        :return: Parsed DataFrame.
+        Encodings tried: utf-8 -> latin1 -> iso-8859-1 -> cp1252
         """
         encodings = ["utf-8", "latin1", "iso-8859-1", "cp1252"]
 
         for encoding in encodings:
             try:
-                logger.info("Attempting CSV read with encoding: %s", encoding)
+                logger.debug("Attempting to parse CSV file '%s' with encoding '%s'", path.name, encoding)
                 df = pd.read_csv(path, encoding=encoding, low_memory=False)
-                logger.info("Successfully parsed CSV using encoding: %s", encoding)
+                logger.info("Successfully parsed CSV file '%s' using '%s' encoding.", path.name, encoding)
                 return df
             except (UnicodeDecodeError, Exception) as e:
-                logger.warning("Failed to parse CSV with encoding '%s': %s", encoding, str(e))
+                logger.debug("Failed to read CSV with encoding '%s': %s", encoding, str(e))
+                continue
 
-        raise ValueError(f"Unable to decode CSV file at '{path}' with supported encodings: {encodings}")
+        error_msg = f"Failed to parse CSV file '{path.name}' with any supported encoding."
+        logger.error(error_msg)
+        raise ValueError(error_msg)
 
     def _read_excel(self, path: Path) -> pd.DataFrame:
-        """
-        Reads Excel files (.xlsx, .xls) using openpyxl.
-
-        :param path: Path object pointing to Excel file.
-        :return: Parsed DataFrame.
-        """
+        """Reads Excel (.xlsx/.xls) files into DataFrame."""
         try:
-            logger.info("Parsing Excel file using openpyxl engine...")
-            df = pd.read_excel(path, engine="openpyxl")
+            logger.debug("Parsing Excel file '%s'...", path.name)
+            df = pd.read_excel(path, engine="openpyxl" if path.suffix == ".xlsx" else None)
             return df
         except Exception as e:
-            error_msg = f"Failed to parse Excel file at '{path}': {str(e)}"
+            error_msg = f"Failed to read Excel file '{path.name}': {str(e)}"
             logger.error(error_msg)
             raise ValueError(error_msg)
 
     def _validate_header_structure(self, df: pd.DataFrame) -> None:
-        """
-        Verifies that mandatory columns exist in the DataFrame header.
+        """Verifies presence of mandatory columns in DataFrame header."""
+        missing_columns = [
+            col for col in self.config.REQUIRED_COLUMNS if col not in df.columns
+        ]
 
-        :param df: Loaded Pandas DataFrame.
-        :raises ValueError: If required columns are missing.
-        """
-        missing_cols = [col for col in self.config.REQUIRED_COLUMNS if col not in df.columns]
-        if missing_cols:
+        if missing_columns:
             error_msg = (
-                f"Raw dataset header validation failed! Missing required columns: {missing_cols}. "
-                f"Present columns: {list(df.columns)}"
+                f"Missing required columns in dataset header: {missing_columns}. "
+                f"Expected mandatory columns: {self.config.REQUIRED_COLUMNS}"
             )
             logger.error(error_msg)
             raise ValueError(error_msg)
 
-        logger.info("Structural header validation passed. Required columns present.")
+        logger.debug("Dataset header structure validated successfully.")
