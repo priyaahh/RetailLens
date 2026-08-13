@@ -71,11 +71,11 @@ class DataCleaner:
 
         # Specific normalization: Uppercase StockCode & InvoiceNo, Title Case Country
         if "StockCode" in df.columns:
-            df["StockCode"] = df["StockCode"].str.upper()
+            df["StockCode"] = df["StockCode"].astype(str).str.strip().str.upper()
         if "InvoiceNo" in df.columns:
-            df["InvoiceNo"] = df["InvoiceNo"].str.upper()
+            df["InvoiceNo"] = df["InvoiceNo"].astype(str).str.strip().str.upper()
         if "Country" in df.columns:
-            df["Country"] = df["Country"].str.title()
+            df["Country"] = df["Country"].astype(str).str.strip().str.title()
 
         return df
 

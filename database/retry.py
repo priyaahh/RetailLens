@@ -35,6 +35,7 @@ def execute_with_retry(
     """
     delay = initial_delay
     attempt = 1
+    func_name = getattr(func, "__name__", getattr(func, "__class__", type(func)).__name__)
 
     while True:
         try:
@@ -54,7 +55,7 @@ def execute_with_retry(
                 logger.error(
                     "Exhausted all %d retry attempts for %s. Last error: %s",
                     max_retries,
-                    func.__name__,
+                    func_name,
                     str(e),
                 )
                 raise e
@@ -63,7 +64,7 @@ def execute_with_retry(
                 "Transient failure on attempt %d/%d for %s: %s. Retrying in %.2fs...",
                 attempt,
                 max_retries,
-                func.__name__,
+                func_name,
                 str(e),
                 delay,
             )

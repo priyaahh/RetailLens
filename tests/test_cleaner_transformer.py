@@ -86,6 +86,23 @@ class TestCleanerAndTransformer(unittest.TestCase):
         self.assertEqual(transformed_df.iloc[0]["RevenueBucket"], "Medium (£10-£50)")
         self.assertEqual(transformed_df.iloc[1]["RevenueBucket"], "Cancellation")
 
+    def test_cleaner_numeric_string_columns(self):
+        """Verify cleaner handles numerical StockCode and InvoiceNo without AttributeError."""
+        data = {
+            "InvoiceNo": [536365, 536366],
+            "StockCode": [85123, 71053],
+            "Description": ["WHITE HEART", "LANTERN"],
+            "Quantity": [6, 10],
+            "InvoiceDate": ["2010-12-01 08:26:00", "2010-12-01 09:15:00"],
+            "UnitPrice": [2.55, 3.00],
+            "CustomerID": [17850, None],
+            "Country": ["United Kingdom", "France"],
+        }
+        df = pd.DataFrame(data)
+        cleaned_df, _ = self.cleaner.clean(df)
+        self.assertEqual(cleaned_df.iloc[0]["InvoiceNo"], "536365")
+        self.assertEqual(cleaned_df.iloc[0]["StockCode"], "85123")
+
 
 if __name__ == "__main__":
     unittest.main()

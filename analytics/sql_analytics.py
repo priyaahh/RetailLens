@@ -71,9 +71,9 @@ class SQLAnalyticsService:
             params["customer_type"] = customer_type
 
         if transaction_type == "Sales":
-            conditions.append("is_cancellation = FALSE")
+            conditions.append("(is_cancellation = FALSE OR is_cancellation = 0)")
         elif transaction_type == "Cancellations":
-            conditions.append("is_cancellation = TRUE")
+            conditions.append("(is_cancellation = TRUE OR is_cancellation = 1)")
 
         where_sql = "WHERE " + " AND ".join(conditions)
         return where_sql, params

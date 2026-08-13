@@ -53,12 +53,19 @@ class KPICalculator:
             params["customer_type"] = customer_type
 
         if transaction_type == "Sales":
-            conditions.append("is_cancellation = FALSE")
+            conditions.append("(is_cancellation = FALSE OR is_cancellation = 0)")
         elif transaction_type == "Cancellations":
-            conditions.append("is_cancellation = TRUE")
+            conditions.append("(is_cancellation = TRUE OR is_cancellation = 1)")
 
         where_sql = "WHERE " + " AND ".join(conditions)
         return where_sql, params
+
+    def get_all_kpis(self) -> Dict[str, Union[float, int, str]]:
+        """Calculates and returns a dictionary of all core executive KPIs."""
+        res = self.get_filtered_kpis()
+        res["cancellation_rate"] = res.get("cancellation_rate_pct", 0.0)
+        res["repeat_customer_rate"] = res.get("repeat_customer_rate_pct", 0.0)
+        return res
 
     def get_filtered_kpis(
         self,
@@ -158,7 +165,7 @@ class KPICalculator:
         where_sql, params = self._build_where_clause(start_date, end_date, country, customer_type)
         query = f"""
             SELECT ROUND(
-                (COUNT(DISTINCT CASE WHEN is_cancellation = TRUE THEN invoice_no END)::NUMERIC / 
+                (1.0 * COUNT(DISTINCT CASE WHEN (is_cancellation = TRUE OR is_cancellation = 1) THEN invoice_no END) / 
                 NULLIF(COUNT(DISTINCT invoice_no), 0)) * 100, 2
             )
             FROM fact_sales
@@ -194,7 +201,7 @@ class KPICalculator:
                 GROUP BY customer_id
             )
             SELECT ROUND(
-                (COUNT(CASE WHEN order_count > 1 THEN 1 END)::NUMERIC / 
+                (1.0 * COUNT(CASE WHEN order_count > 1 THEN 1 END) / 
                 NULLIF(COUNT(*), 0)) * 100, 2
             )
             FROM registered_orders;

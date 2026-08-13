@@ -58,9 +58,9 @@ class AnalyticsRepository:
             params["customer_type"] = filters.customer_type
 
         if filters.transaction_type == "Sales":
-            conditions.append("is_cancellation = FALSE")
+            conditions.append("(is_cancellation = FALSE OR is_cancellation = 0)")
         elif filters.transaction_type == "Cancellations":
-            conditions.append("is_cancellation = TRUE")
+            conditions.append("(is_cancellation = TRUE OR is_cancellation = 1)")
 
         where_sql = "WHERE " + " AND ".join(conditions)
         return where_sql, params
@@ -93,7 +93,7 @@ class AnalyticsRepository:
         """Retrieves total net monetary revenue excluding cancellations."""
         where_sql, params = self._build_where_clause(filters)
         if "is_cancellation" not in where_sql:
-            where_sql += " AND is_cancellation = FALSE"
+            where_sql += " AND (is_cancellation = FALSE OR is_cancellation = 0)"
         query = f"SELECT COALESCE(SUM(total_amount), 0.00) FROM fact_sales {where_sql};"
         val = self._execute_scalar(query, params)
         return float(val or 0.0)
@@ -102,7 +102,7 @@ class AnalyticsRepository:
         """Retrieves distinct completed orders count."""
         where_sql, params = self._build_where_clause(filters)
         if "is_cancellation" not in where_sql:
-            where_sql += " AND is_cancellation = FALSE"
+            where_sql += " AND (is_cancellation = FALSE OR is_cancellation = 0)"
         query = f"SELECT COUNT(DISTINCT invoice_no) FROM fact_sales {where_sql};"
         val = self._execute_scalar(query, params)
         return int(val or 0)
@@ -111,7 +111,7 @@ class AnalyticsRepository:
         """Retrieves total items sold excluding cancellations."""
         where_sql, params = self._build_where_clause(filters)
         if "is_cancellation" not in where_sql:
-            where_sql += " AND is_cancellation = FALSE"
+            where_sql += " AND (is_cancellation = FALSE OR is_cancellation = 0)"
         query = f"SELECT COALESCE(SUM(quantity), 0) FROM fact_sales {where_sql};"
         val = self._execute_scalar(query, params)
         return int(val or 0)
@@ -134,7 +134,7 @@ class AnalyticsRepository:
         """Calculates Average Order Value (AOV) directly in PostgreSQL."""
         where_sql, params = self._build_where_clause(filters)
         if "is_cancellation" not in where_sql:
-            where_sql += " AND is_cancellation = FALSE"
+            where_sql += " AND (is_cancellation = FALSE OR is_cancellation = 0)"
         query = f"""
             SELECT ROUND(
                 COALESCE(SUM(total_amount), 0.00) / NULLIF(COUNT(DISTINCT invoice_no), 0), 2
@@ -146,7 +146,7 @@ class AnalyticsRepository:
     def get_cancellation_count(self, filters: Optional[FilterParams] = None) -> int:
         """Retrieves count of distinct cancelled invoices."""
         where_sql, params = self._build_where_clause(filters)
-        query = f"SELECT COUNT(DISTINCT CASE WHEN is_cancellation = TRUE THEN invoice_no END) FROM fact_sales {where_sql};"
+        query = f"SELECT COUNT(DISTINCT CASE WHEN (is_cancellation = TRUE OR is_cancellation = 1) THEN invoice_no END) FROM fact_sales {where_sql};"
         val = self._execute_scalar(query, params)
         return int(val or 0)
 
@@ -155,7 +155,7 @@ class AnalyticsRepository:
         where_sql, params = self._build_where_clause(filters)
         query = f"""
             SELECT ROUND(
-                (COUNT(DISTINCT CASE WHEN is_cancellation = TRUE THEN invoice_no END)::NUMERIC / 
+                (1.0 * COUNT(DISTINCT CASE WHEN (is_cancellation = TRUE OR is_cancellation = 1) THEN invoice_no END) / 
                 NULLIF(COUNT(DISTINCT invoice_no), 0)) * 100, 2
             ) FROM fact_sales {where_sql};
         """
@@ -166,7 +166,7 @@ class AnalyticsRepository:
         """Retrieves total lost revenue monetary sum from returns/cancellations."""
         where_sql, params = self._build_where_clause(filters)
         if "is_cancellation" not in where_sql:
-            where_sql += " AND is_cancellation = TRUE"
+            where_sql += " AND (is_cancellation = TRUE OR is_cancellation = 1)"
         query = f"SELECT COALESCE(ABS(SUM(total_amount)), 0.00) FROM fact_sales {where_sql};"
         val = self._execute_scalar(query, params)
         return float(val or 0.0)
