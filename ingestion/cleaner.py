@@ -67,15 +67,15 @@ class DataCleaner:
         string_cols = df.select_dtypes(include=["object", "string"]).columns
 
         for col in string_cols:
-            df[col] = df[col].astype(str).str.strip()
+            df[col] = df[col].apply(lambda x: str(x).strip() if pd.notna(x) and str(x).lower() not in ["none", "nan", "null"] else x)
 
         # Specific normalization: Uppercase StockCode & InvoiceNo, Title Case Country
         if "StockCode" in df.columns:
-            df["StockCode"] = df["StockCode"].astype(str).str.strip().str.upper()
+            df["StockCode"] = df["StockCode"].apply(lambda x: str(x).strip().upper() if pd.notna(x) else x)
         if "InvoiceNo" in df.columns:
-            df["InvoiceNo"] = df["InvoiceNo"].astype(str).str.strip().str.upper()
+            df["InvoiceNo"] = df["InvoiceNo"].apply(lambda x: str(x).strip().upper() if pd.notna(x) else x)
         if "Country" in df.columns:
-            df["Country"] = df["Country"].astype(str).str.strip().str.title()
+            df["Country"] = df["Country"].apply(lambda x: str(x).strip().title() if pd.notna(x) else x)
 
         return df
 
@@ -102,12 +102,14 @@ class DataCleaner:
         imputed_count = 0
 
         if "CustomerID" in df.columns:
-            null_cust = df["CustomerID"].isna() | (df["CustomerID"] == "") | (df["CustomerID"] == "NAN") | (df["CustomerID"] == "NONE")
+            cust_str = df["CustomerID"].astype(str).str.strip().str.upper()
+            null_cust = df["CustomerID"].isna() | cust_str.isin(["", "NAN", "NONE", "NULL", "<NA>"])
             imputed_count += null_cust.sum()
             df.loc[null_cust, "CustomerID"] = "GUEST"
 
         if "Description" in df.columns:
-            null_desc = df["Description"].isna() | (df["Description"] == "") | (df["Description"] == "NAN")
+            desc_str = df["Description"].astype(str).str.strip().str.upper()
+            null_desc = df["Description"].isna() | desc_str.isin(["", "NAN", "NONE", "NULL", "<NA>"])
             imputed_count += null_desc.sum()
             df.loc[null_desc, "Description"] = "UNKNOWN DESCRIPTION"
 

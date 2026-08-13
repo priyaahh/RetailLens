@@ -57,6 +57,16 @@ class ValidationReport:
         self.valid_rows = max(0, self.total_rows - self.invalid_rows)
         self.is_valid = len(self.error_counts) == 0 or self.invalid_rows == 0
 
+    @property
+    def passed_rows(self) -> int:
+        """Alias for valid_rows metric."""
+        return self.valid_rows
+
+    @property
+    def failed_rows(self) -> int:
+        """Alias for invalid_rows metric."""
+        return self.invalid_rows
+
 
 class DataValidator:
     """Modular Data Quality Engine performing structural and semantic dataset checks."""

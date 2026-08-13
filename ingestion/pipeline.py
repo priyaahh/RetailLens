@@ -140,13 +140,19 @@ class ETLPipeline:
             df_valid = df_raw
             if self.config.validate_data:
                 logger.info("Stage 2: Executing data quality validation...")
-                report = self.validator.validate(df_raw)
+                val_output = self.validator.validate(df_raw)
+                if isinstance(val_output, tuple):
+                    report, df_valid = val_output
+                else:
+                    report = val_output
+                    df_valid = df_raw
+
                 result.validation_report = report
-                result.valid_rows = report.passed_rows
-                result.invalid_rows = report.failed_rows
+                result.valid_rows = report.valid_rows
+                result.invalid_rows = report.invalid_rows
 
                 if not report.is_valid:
-                    error_msg = f"Data validation failed! Passed: {report.passed_rows}, Failed: {report.failed_rows}"
+                    error_msg = f"Data validation failed! Passed: {report.valid_rows}, Failed: {report.invalid_rows}"
                     logger.error(error_msg)
                     result.status = "FAILED"
                     result.error_message = error_msg

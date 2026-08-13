@@ -73,7 +73,7 @@ class TestAnalyticsRepository(unittest.TestCase):
 
     def test_repository_with_data(self):
         """Verify query output accuracy with deterministic SQLite test records."""
-        with self.engine.connect() as conn:
+        with self.engine.begin() as conn:
             conn.execute(text("""
                 INSERT INTO fact_sales (
                     invoice_no, stock_code, description, quantity, unit_price, total_amount,

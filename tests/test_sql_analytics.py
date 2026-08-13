@@ -18,7 +18,7 @@ class TestSQLAnalyticsService(unittest.TestCase):
         self.engine = create_engine("sqlite:///:memory:")
         self.service = SQLAnalyticsService(engine=self.engine)
 
-        with self.engine.connect() as conn:
+        with self.engine.begin() as conn:
             conn.execute(text("""
                 CREATE TABLE fact_sales (
                     transaction_id INTEGER PRIMARY KEY AUTOINCREMENT,

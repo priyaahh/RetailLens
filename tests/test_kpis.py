@@ -52,7 +52,7 @@ class TestKPICalculator(unittest.TestCase):
 
     def test_kpi_calculations_with_data(self):
         """Verify accurate KPI metric calculations with deterministic test data."""
-        with self.engine.connect() as conn:
+        with self.engine.begin() as conn:
             conn.execute(text("""
                 INSERT INTO fact_sales (
                     invoice_no, stock_code, description, quantity, unit_price, total_amount,

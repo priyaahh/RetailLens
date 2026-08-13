@@ -31,4 +31,4 @@ jobs:
           APP_ENV: testing
           LOG_LEVEL: WARNING
         run: |
-          python -m unittest discover tests
+          python -m unittest discover tests -v
