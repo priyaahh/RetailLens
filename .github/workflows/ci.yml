@@ -1,4 +1,4 @@
-name: RetailLens CI Pipeline
+name: RetailLens Production CI/CD Pipeline
 
 on:
   push:
@@ -7,8 +7,8 @@ on:
     branches: [ main, dev ]
 
 jobs:
-  test:
-    name: Run Continuous Integration Suite
+  lint-and-test:
+    name: Lint, Test & Validation Suite
     runs-on: ubuntu-latest
 
     steps:
@@ -26,9 +26,29 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Unit & Integration Test Suite
+      - name: Run Full Unit & Integration Test Suite
         env:
           APP_ENV: testing
           LOG_LEVEL: WARNING
+          STORAGE_BACKEND: local
         run: |
           python -m unittest discover tests -v
+
+  docker-build:
+    name: Container Build & Validation
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker Container Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: retaillens:ci-latest

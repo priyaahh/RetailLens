@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 class DataQualitySummary:
     """Encapsulates data quality metrics, quality scores, and operational throughput statistics."""
     run_id: str = ""
+    processing_engine: str = "Pandas"  # Pandas or PySpark
     total_rows: int = 0
     valid_rows: int = 0
     invalid_rows: int = 0

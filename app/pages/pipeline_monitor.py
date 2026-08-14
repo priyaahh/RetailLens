@@ -41,11 +41,12 @@ def render_pipeline_monitor_page(monitoring_service: PipelineMonitoringService) 
     latest_run = monitoring_service.get_latest_run()
 
     if latest_run:
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("Run ID", latest_run.get("run_id", "N/A")[:8] + "...")
-        c2.metric("Status", latest_run.get("status", "N/A"))
-        c3.metric("Rows Read", f"{latest_run.get('rows_read', 0):,}")
-        c4.metric("Rows Inserted", f"{latest_run.get('rows_inserted', 0):,}")
+        c2.metric("Compute Engine", latest_run.get("pipeline_name", "RetailLens_ETL"))
+        c3.metric("Status", latest_run.get("status", "N/A"))
+        c4.metric("Rows Read", f"{latest_run.get('rows_read', 0):,}")
+        c5.metric("Rows Inserted", f"{latest_run.get('rows_inserted', 0):,}")
 
         if latest_run.get("error_message"):
             st.error(f"⚠️ Latest Run Failure Error: {latest_run.get('error_message')}")

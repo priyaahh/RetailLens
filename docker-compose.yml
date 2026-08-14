@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: retaillens_app
+    ports:
+      - "8501:8501"
+      - "8000:8000"
+    environment:
+      - APP_ENV=development
+      - LOG_LEVEL=INFO
+      - STORAGE_BACKEND=local
+      - PROCESSING_ENGINE=auto
+      - SPARK_THRESHOLD_MB=100
+      - REDIS_URL=redis://redis:6379/0
+      - METRICS_ENABLED=true
+    volumes:
+      - .:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7.0-alpine
+    container_name: retaillens_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3

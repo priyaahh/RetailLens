@@ -45,6 +45,15 @@ class AppConfig:
     db_pool_timeout: int = 30
     db_pool_recycle: int = 1800
 
+    # Distributed & Storage Settings
+    storage_backend: str = "local"
+    object_storage_bucket: Optional[str] = None
+    cloud_region: str = "us-east-1"
+    redis_url: Optional[str] = None
+    processing_engine: str = "auto"
+    spark_threshold_mb: float = 100.0
+    metrics_enabled: bool = True
+
     # Application Performance & Guardrail Settings
     max_file_size_mb: int = 100
     cache_ttl_seconds: int = 300
