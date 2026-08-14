@@ -7,7 +7,7 @@ and lazy DAG evaluation, with graceful fallback to Pandas when PySpark is not av
 """
 
 import logging
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import pandas as pd
 

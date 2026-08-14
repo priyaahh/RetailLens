@@ -7,7 +7,7 @@ with graceful mock fallback for local development and unit testing.
 """
 
 import logging
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from storage.base import StorageBackend
 

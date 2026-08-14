@@ -5,6 +5,8 @@ Unit tests for SparkDataTransformer (Phase 7 Milestone 2).
 """
 
 import unittest
+from typing import Any
+
 import pandas as pd
 
 from ingestion.spark_transformer import HAS_SPARK, SparkDataTransformer
