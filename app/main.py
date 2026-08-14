@@ -15,12 +15,14 @@ project_root = Path(__file__).resolve().parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from analytics.pipeline_service import PipelineMonitoringService
 from analytics.service import AnalyticsService
 from app.components.filters import render_sidebar_filters
 from app.pages.customers import render_customers_page
 from app.pages.insights import render_insights_page
 from app.pages.operations import render_operations_page
 from app.pages.overview import render_overview_page
+from app.pages.pipeline_monitor import render_pipeline_monitor_page
 from app.pages.products import render_products_page
 from app.pages.sales import render_sales_page
 
@@ -39,6 +41,12 @@ def init_analytics_service():
     return AnalyticsService()
 
 
+@st.cache_resource
+def init_monitoring_service():
+    """Initializes and caches the PipelineMonitoringService layer."""
+    return PipelineMonitoringService()
+
+
 @st.cache_data(ttl=300)
 def fetch_country_list(_analytics_service: AnalyticsService):
     """Fetches and caches country filter choices for 5 minutes."""
@@ -50,6 +58,7 @@ def main():
     try:
         # Initialize Cached Analytics Service
         analytics_service = init_analytics_service()
+        monitoring_service = init_monitoring_service()
 
         # Fetch Countries for Filter Menu
         countries = fetch_country_list(analytics_service)
@@ -72,6 +81,8 @@ def main():
             render_insights_page(analytics_service, filters)
         elif page == "Operations Analytics":
             render_operations_page(analytics_service.kpi_engine, analytics_service.repository, filters)
+        elif page == "Pipeline Monitor":
+            render_pipeline_monitor_page(monitoring_service)
 
     except Exception as e:
         st.error("⚠️ Unable to connect to the analytics database. Please check configuration or try again later.")

@@ -28,6 +28,7 @@ def render_sidebar_filters(available_countries: List[str]) -> Dict[str, Any]:
             "Customer Analytics",
             "Business Insights",
             "Operations Analytics",
+            "Pipeline Monitor",
         ],
         index=0,
     )

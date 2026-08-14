@@ -1,27 +1,29 @@
-# ⚡ Phase 6 Cheat Sheet (5-Minute Scalable Data Platform Revision Guide)
+# ⚡ Phase 6 Cheat Sheet (5-Minute Production Pipeline Revision Guide)
 
 ---
 
-## 📐 Milestone 1 Architecture
+## 📐 End-to-End Pipeline Audit Flow
 
 ```text
-Input File ──► WatermarkManager (SHA-256 Hash & High Watermark) ──► Filter New Rows ──► Anti-Join Load ──► fact_sales
+Input File ──► SHA-256 Hash ──► PipelineRunTracker (start_run) ──► Validation & Cleaning ──► Anti-Join Load ──► DataLineageTracker & QualityMonitor ──► complete_run / fail_run
 ```
 
 ---
 
-## 🔑 Key Definitions
+## 🔑 Key Definitions & Architecture Terms
 
-* **Incremental Load**: Processing only new or modified data records created since the last watermark timestamp, saving CPU and network resources.
-* **Full Refresh**: Wiping out existing target tables and re-processing all historical data from scratch on every pipeline run.
-* **Idempotency**: An engineering property where running a pipeline or query multiple times yields the exact same state as running it once.
-* **High-Watermark**: Timestamp boundary representing the maximum timestamp processed in previous ETL runs (`MAX(invoice_timestamp)`).
-* **Anti-Join Deduplication**: Comparing incoming batch keys against loaded DB natural keys `(invoice_no, stock_code, invoice_timestamp)` to filter out existing rows before appending.
+* **Incremental Load**: Processing only new or modified records created since the last high watermark (`MAX(invoice_timestamp)`).
+* **Pipeline Run Tracking**: Audit mechanism logging execution status (`RUNNING`, `SUCCESS`, `FAILED`), row counts, and duration in `pipeline_runs`.
+* **Data Lineage**: Provenance metadata recording source file path, SHA-256 content hash, transformation version, and target table for audit governance.
+* **Idempotency**: Operation property ensuring repeated execution yields identical final database states without duplicate records.
+* **Data Quality Score**: Percentage of valid, non-rejected rows (`valid_rows / total_rows * 100`) calculated per execution run.
+* **SQL Filter Pushdown**: Executing aggregations (`SUM`, `COUNT`, `AVG`) directly inside PostgreSQL using indexes to return scalar metrics.
 
 ---
 
-## 💡 Top Milestone 1 Interview Talking Points
+## 💡 Top Phase 6 Interview Talking Points
 
 1. *"We achieved pipeline idempotency by combining SHA-256 file hash tracking in `etl_watermarks` with natural key anti-joins in `DatabaseLoader`."*
-2. *"Our incremental processing engine reads the high-watermark timestamp (`MAX(invoice_timestamp)`) from `fact_sales` to filter out historical rows before validation and feature transformation."*
-3. *"We enforced database-level idempotency by placing a composite unique constraint on `fact_sales(invoice_no, stock_code, invoice_timestamp)`."*
+2. *"Our audit engine (`PipelineRunTracker`) records execution run status (`RUNNING`, `SUCCESS`, `FAILED`), row breakdown statistics, and execution duration in `pipeline_runs`."*
+3. *"We established data provenance using `DataLineageTracker`, mapping every target record batch back to its raw source file, SHA-256 hash, and transformation version."*
+4. *"We built an operational monitoring service (`PipelineMonitoringService`) and Streamlit dashboard tab displaying system health badges, failure alerts, and quality scores."*
