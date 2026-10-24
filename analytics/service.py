@@ -103,3 +103,37 @@ class AnalyticsService:
     def get_available_countries(self) -> List[str]:
         """Retrieves distinct country dropdown choices."""
         return self.repository.get_available_countries()
+
+    def get_revenue_trend(
+        self,
+        granularity: str = "Monthly",
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        country: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """Convenience method delegating to repository/SQLAnalyticsService for page compatibility."""
+        return self.repository.get_revenue_trend(granularity, start_date, end_date, country)
+
+    def get_customer_summary(self, country: Optional[str] = None) -> pd.DataFrame:
+        """Convenience method delegating to repository/SQLAnalyticsService for page compatibility."""
+        return self.repository.get_customer_summary(country)
+
+    def get_top_products_by_revenue(self, limit: int = 10, country: Optional[str] = None) -> pd.DataFrame:
+        """Convenience method delegating to repository/SQLAnalyticsService for page compatibility."""
+        return self.repository.get_top_products_by_revenue(limit, country)
+
+    def get_top_products_by_quantity(self, limit: int = 10, country: Optional[str] = None) -> pd.DataFrame:
+        """Convenience method delegating to repository/SQLAnalyticsService for page compatibility."""
+        return self.repository.get_top_products_by_quantity(limit, country)
+
+    def get_top_customers_by_revenue(self, limit: int = 10, country: Optional[str] = None) -> pd.DataFrame:
+        """Convenience method delegating to repository/SQLAnalyticsService for page compatibility."""
+        return self.repository.get_top_customers_by_revenue(limit, country)
+
+    def get_cancellation_trend(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> pd.DataFrame:
+        """Convenience method delegating to repository/SQLAnalyticsService for page compatibility."""
+        return self.repository.get_cancellation_trend(start_date, end_date)
+
+    def get_products_by_cancellation(self, limit: int = 10, country: Optional[str] = None) -> pd.DataFrame:
+        """Convenience method delegating to repository/SQLAnalyticsService for page compatibility."""
+        return self.repository.get_products_by_cancellation(limit, country)

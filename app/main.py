@@ -15,8 +15,10 @@ project_root = Path(__file__).resolve().parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from analytics.kpis import KPICalculator
 from analytics.pipeline_service import PipelineMonitoringService
 from analytics.service import AnalyticsService
+from analytics.sql_analytics import SQLAnalyticsService
 from app.components.filters import render_sidebar_filters
 from app.pages.customers import render_customers_page
 from app.pages.insights import render_insights_page
@@ -36,6 +38,18 @@ st.set_page_config(
 
 
 @st.cache_resource
+def init_kpi_calculator():
+    """Initializes and caches the KPICalculator layer."""
+    return KPICalculator()
+
+
+@st.cache_resource
+def init_sql_analytics_service():
+    """Initializes and caches the SQLAnalyticsService layer."""
+    return SQLAnalyticsService()
+
+
+@st.cache_resource
 def init_analytics_service():
     """Initializes and caches the master AnalyticsService application layer."""
     return AnalyticsService()
@@ -48,20 +62,22 @@ def init_monitoring_service():
 
 
 @st.cache_data(ttl=300)
-def fetch_country_list(_analytics_service: AnalyticsService):
+def fetch_country_list(_service):
     """Fetches and caches country filter choices for 5 minutes."""
-    return _analytics_service.get_available_countries()
+    return _service.get_available_countries()
 
 
 def main():
     """Main application execution router."""
     try:
-        # Initialize Cached Analytics Service
+        # Initialize Cached Services
+        kpi_calc = init_kpi_calculator()
+        sql_analytics = init_sql_analytics_service()
         analytics_service = init_analytics_service()
         monitoring_service = init_monitoring_service()
 
         # Fetch Countries for Filter Menu
-        countries = fetch_country_list(analytics_service)
+        countries = fetch_country_list(sql_analytics)
 
         # Render Sidebar Navigation & Filters
         filters = render_sidebar_filters(countries)
@@ -70,17 +86,17 @@ def main():
         page = filters.get("page", "Executive Overview")
 
         if page == "Executive Overview":
-            render_overview_page(analytics_service.kpi_engine, analytics_service.repository, filters)
+            render_overview_page(kpi_calc, sql_analytics, filters)
         elif page == "Sales Analytics":
-            render_sales_page(analytics_service.repository, filters)
+            render_sales_page(sql_analytics, filters)
         elif page == "Product Analytics":
-            render_products_page(analytics_service.repository, filters)
+            render_products_page(sql_analytics, filters)
         elif page == "Customer Analytics":
-            render_customers_page(analytics_service.repository, filters)
+            render_customers_page(sql_analytics, filters)
         elif page == "Business Insights":
             render_insights_page(analytics_service, filters)
         elif page == "Operations Analytics":
-            render_operations_page(analytics_service.kpi_engine, analytics_service.repository, filters)
+            render_operations_page(kpi_calc, sql_analytics, filters)
         elif page == "Pipeline Monitor":
             render_pipeline_monitor_page(monitoring_service)
 

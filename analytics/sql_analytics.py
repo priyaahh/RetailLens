@@ -210,7 +210,7 @@ class SQLAnalyticsService:
                 COUNT(DISTINCT invoice_no) AS total_orders,
                 SUM(total_amount) AS total_revenue
             FROM fact_sales
-            WHERE is_cancellation = FALSE
+            WHERE (is_cancellation = FALSE OR is_cancellation = 0)
             GROUP BY country
             ORDER BY total_revenue DESC
             {limit_clause};
@@ -238,14 +238,25 @@ class SQLAnalyticsService:
             start_date=start_date, end_date=end_date, country=country, transaction_type="Sales"
         )
 
-        if granularity == "Daily":
-            group_col = "DATE_TRUNC('day', invoice_timestamp)"
-        elif granularity == "Weekly":
-            group_col = "DATE_TRUNC('week', invoice_timestamp)"
-        elif granularity == "Quarterly":
-            group_col = "DATE_TRUNC('quarter', invoice_timestamp)"
-        else:  # Monthly default
-            group_col = "DATE_TRUNC('month', invoice_timestamp)"
+        is_sqlite = getattr(self.engine, "dialect", None) and self.engine.dialect.name == "sqlite"
+        if is_sqlite:
+            if granularity == "Daily":
+                group_col = "strftime('%Y-%m-%d', invoice_timestamp)"
+            elif granularity == "Weekly":
+                group_col = "strftime('%Y-%W', invoice_timestamp)"
+            elif granularity == "Quarterly":
+                group_col = "(strftime('%Y', invoice_timestamp) || '-Q' || ((CAST(strftime('%m', invoice_timestamp) AS integer) + 2) / 3))"
+            else:
+                group_col = "strftime('%Y-%m', invoice_timestamp)"
+        else:
+            if granularity == "Daily":
+                group_col = "DATE_TRUNC('day', invoice_timestamp)"
+            elif granularity == "Weekly":
+                group_col = "DATE_TRUNC('week', invoice_timestamp)"
+            elif granularity == "Quarterly":
+                group_col = "DATE_TRUNC('quarter', invoice_timestamp)"
+            else:  # Monthly default
+                group_col = "DATE_TRUNC('month', invoice_timestamp)"
 
         query = f"""
             SELECT 
@@ -269,15 +280,18 @@ class SQLAnalyticsService:
             start_date=start_date, end_date=end_date, transaction_type="Cancellations"
         )
 
+        is_sqlite = getattr(self.engine, "dialect", None) and self.engine.dialect.name == "sqlite"
+        group_col = "strftime('%Y-%m', invoice_timestamp)" if is_sqlite else "DATE_TRUNC('month', invoice_timestamp)"
+
         query = f"""
             SELECT 
-                DATE_TRUNC('month', invoice_timestamp) AS period,
+                {group_col} AS period,
                 COUNT(DISTINCT invoice_no) AS cancelled_orders,
                 ABS(SUM(quantity)) AS cancelled_units,
                 ABS(SUM(total_amount)) AS lost_revenue
             FROM fact_sales
             {where_sql}
-            GROUP BY DATE_TRUNC('month', invoice_timestamp)
+            GROUP BY {group_col}
             ORDER BY period ASC;
         """
         return self.execute_query(query, params=params)

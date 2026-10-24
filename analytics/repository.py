@@ -287,11 +287,14 @@ class AnalyticsRepository:
         def _fetch():
             where_sql, params = self._build_where_clause(filters)
             if "is_cancellation" not in where_sql:
-                where_sql += " AND is_cancellation = FALSE"
+                where_sql += " AND (is_cancellation = FALSE OR is_cancellation = 0)"
+
+            is_sqlite = getattr(self.engine, "dialect", None) and self.engine.dialect.name == "sqlite"
+            group_col = "strftime('%Y-%m', invoice_timestamp)" if is_sqlite else "DATE_TRUNC('month', invoice_timestamp)"
 
             query = f"""
                 SELECT 
-                    DATE_TRUNC('month', invoice_timestamp) AS period,
+                    {group_col} AS period,
                     invoice_year,
                     invoice_month,
                     COUNT(DISTINCT invoice_no) AS total_orders,
@@ -300,12 +303,60 @@ class AnalyticsRepository:
                     ROUND(SUM(total_amount) / NULLIF(COUNT(DISTINCT invoice_no), 0), 2) AS average_order_value
                 FROM fact_sales
                 {where_sql}
-                GROUP BY DATE_TRUNC('month', invoice_timestamp), invoice_year, invoice_month
+                GROUP BY {group_col}, invoice_year, invoice_month
                 ORDER BY period ASC;
             """
             return self._execute_query(query, params)
 
         return self._cached_dataframe(key, _fetch)
+
+    def get_revenue_trend(
+        self,
+        granularity: str = "Monthly",
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        country: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """Convenience method delegating to SQLAnalyticsService for page compatibility."""
+        from analytics.sql_analytics import SQLAnalyticsService
+        service = SQLAnalyticsService(engine=self.engine)
+        return service.get_revenue_trend(granularity, start_date, end_date, country)
+
+    def get_customer_summary(self, country: Optional[str] = None) -> pd.DataFrame:
+        """Convenience method delegating to SQLAnalyticsService for page compatibility."""
+        from analytics.sql_analytics import SQLAnalyticsService
+        service = SQLAnalyticsService(engine=self.engine)
+        return service.get_customer_summary(country)
+
+    def get_top_products_by_revenue(self, limit: int = 10, country: Optional[str] = None) -> pd.DataFrame:
+        """Convenience method delegating to SQLAnalyticsService for page compatibility."""
+        from analytics.sql_analytics import SQLAnalyticsService
+        service = SQLAnalyticsService(engine=self.engine)
+        return service.get_top_products_by_revenue(limit, country)
+
+    def get_top_products_by_quantity(self, limit: int = 10, country: Optional[str] = None) -> pd.DataFrame:
+        """Convenience method delegating to SQLAnalyticsService for page compatibility."""
+        from analytics.sql_analytics import SQLAnalyticsService
+        service = SQLAnalyticsService(engine=self.engine)
+        return service.get_top_products_by_quantity(limit, country)
+
+    def get_top_customers_by_revenue(self, limit: int = 10, country: Optional[str] = None) -> pd.DataFrame:
+        """Convenience method delegating to SQLAnalyticsService for page compatibility."""
+        from analytics.sql_analytics import SQLAnalyticsService
+        service = SQLAnalyticsService(engine=self.engine)
+        return service.get_top_customers_by_revenue(limit, country)
+
+    def get_cancellation_trend(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> pd.DataFrame:
+        """Convenience method delegating to SQLAnalyticsService for page compatibility."""
+        from analytics.sql_analytics import SQLAnalyticsService
+        service = SQLAnalyticsService(engine=self.engine)
+        return service.get_cancellation_trend(start_date, end_date)
+
+    def get_products_by_cancellation(self, limit: int = 10, country: Optional[str] = None) -> pd.DataFrame:
+        """Convenience method delegating to SQLAnalyticsService for page compatibility."""
+        from analytics.sql_analytics import SQLAnalyticsService
+        service = SQLAnalyticsService(engine=self.engine)
+        return service.get_products_by_cancellation(limit, country)
 
     def get_revenue_by_country(
         self, filters: Optional[FilterParams] = None, limit: Optional[int] = None

@@ -217,3 +217,28 @@ class KPIEngine:
         )
 
         return kpis
+
+    def get_filtered_kpis(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        country: Optional[str] = None,
+        customer_type: Optional[str] = None,
+    ) -> Dict[str, Union[float, int, str]]:
+        """Convenience method delegating to KPICalculator for page compatibility."""
+        from analytics.kpis import KPICalculator
+        calc = KPICalculator(engine=self.repository.engine)
+        return calc.get_filtered_kpis(start_date, end_date, country, customer_type)
+
+    def cancellation_rate(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        country: Optional[str] = None,
+        customer_type: Optional[str] = None,
+    ) -> float:
+        """Convenience method delegating to KPICalculator for page compatibility."""
+        from analytics.kpis import KPICalculator
+        calc = KPICalculator(engine=self.repository.engine)
+        return calc.cancellation_rate(start_date, end_date, country, customer_type)
+
