@@ -14,6 +14,7 @@ __pycache__/
 .env
 .env.*
 *.env
+!.env.example
 
 # Data directories (keep directory structure via .gitkeep, ignore data dumps)
 data/raw/*

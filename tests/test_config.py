@@ -89,16 +89,37 @@ class TestAppConfig(unittest.TestCase):
                 AppConfig.load_from_env()
             self.assertIn("Invalid DB_PORT", str(ctx.exception))
 
+    def test_database_url_parsing(self):
+        """Verify parsing and normalization of DATABASE_URL from postgres:// to postgresql://."""
+        env_vars = {
+            "DATABASE_URL": "postgres://prod_user:prod_pass@ep-cool-db.us-east-2.aws.neon.tech:5432/retaillens_db?sslmode=require",
+            "SECRET_KEY": "a-strong-prod-secret",
+            "APP_ENV": "production",
+        }
+        with patch.dict(os.environ, env_vars, clear=True):
+            config = AppConfig.load_from_env()
+            self.assertTrue(config.get_db_url().startswith("postgresql://"))
+            self.assertEqual(config.db_host, "ep-cool-db.us-east-2.aws.neon.tech")
+            self.assertEqual(config.db_name, "retaillens_db")
+            self.assertEqual(config.db_user, "prod_user")
+            self.assertEqual(config.db_password, "prod_pass")
+
     def test_to_dict_mask_secrets(self):
-        """Verify passwords and secret keys are masked in to_dict output."""
-        config = AppConfig(db_password="super_secret_password", secret_key="my_secret_key")
+        """Verify passwords, secret keys, and database URLs are masked in to_dict output."""
+        config = AppConfig(
+            db_password="super_secret_password",
+            secret_key="my_secret_key",
+            database_url="postgresql://user:pass@host:5432/db",
+        )
         masked_dict = config.to_dict(mask_secrets=True)
         self.assertEqual(masked_dict["db_password"], "***MASKED***")
         self.assertEqual(masked_dict["secret_key"], "***MASKED***")
+        self.assertEqual(masked_dict["database_url"], "***MASKED***")
 
         unmasked_dict = config.to_dict(mask_secrets=False)
         self.assertEqual(unmasked_dict["db_password"], "super_secret_password")
         self.assertEqual(unmasked_dict["secret_key"], "my_secret_key")
+        self.assertEqual(unmasked_dict["database_url"], "postgresql://user:pass@host:5432/db")
 
 
 if __name__ == "__main__":

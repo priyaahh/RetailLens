@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: retaillens-app
+    env: python
+    region: oregon
+    plan: free
+    branch: main
+    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt"
+    startCommand: "streamlit run app/main.py --server.port=$PORT --server.address=0.0.0.0"
+    healthCheckPath: /_stcore/health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: retaillens-db
+          property: connectionString
+      - key: DB_SSLMODE
+        value: require
+      - key: STORAGE_BACKEND
+        value: local
+      - key: PROCESSING_ENGINE
+        value: auto
+      - key: METRICS_ENABLED
+        value: "true"
+
+databases:
+  - name: retaillens-db
+    region: oregon
+    plan: free
+    databaseName: retaillens_db
+    user: retail_admin

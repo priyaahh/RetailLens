@@ -88,6 +88,56 @@ class TestAnalyticsRepository(unittest.TestCase):
         self.assertEqual(self.repo.get_total_orders(), 2)
         self.assertEqual(self.repo.get_average_order_value(), 22.50)
 
+    def test_redis_cache_integration_scalar(self):
+        """Verify scalar queries hit DB on cache miss and use cache on subsequent calls."""
+        with self.engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO fact_sales (
+                    invoice_no, stock_code, description, quantity, unit_price, total_amount,
+                    invoice_timestamp, invoice_year, invoice_month, invoice_quarter, day_of_week,
+                    invoice_hour, customer_id, customer_type, country, is_cancellation, revenue_bucket
+                ) VALUES 
+                ('536365', '85123A', 'WHITE HEART', 6, 2.50, 15.00, '2010-12-01 08:26:00', 2010, 12, 4, 'Wednesday', 8, '17850', 'Registered', 'United Kingdom', 0, 'Medium');
+            """))
+
+        self.repo._execute_scalar = MagicMock(side_effect=self.repo._execute_scalar)
+
+        # 1. First call: Cache miss -> executes SQL
+        rev1 = self.repo.get_total_revenue()
+        self.assertEqual(rev1, 15.00)
+        self.assertEqual(self.repo._execute_scalar.call_count, 1)
+
+        # 2. Second call: Cache hit -> returns cached value without calling DB
+        rev2 = self.repo.get_total_revenue()
+        self.assertEqual(rev2, 15.00)
+        self.assertEqual(self.repo._execute_scalar.call_count, 1)
+
+    def test_redis_cache_integration_dataframe(self):
+        """Verify DataFrame queries hit DB on cache miss and return cached DataFrame on subsequent calls."""
+        with self.engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO fact_sales (
+                    invoice_no, stock_code, description, quantity, unit_price, total_amount,
+                    invoice_timestamp, invoice_year, invoice_month, invoice_quarter, day_of_week,
+                    invoice_hour, customer_id, customer_type, country, is_cancellation, revenue_bucket
+                ) VALUES 
+                ('536365', '85123A', 'WHITE HEART', 6, 2.50, 15.00, '2010-12-01 08:26:00', 2010, 12, 4, 'Wednesday', 8, '17850', 'Registered', 'United Kingdom', 0, 'Medium');
+            """))
+
+        self.repo._execute_query = MagicMock(side_effect=self.repo._execute_query)
+
+        # 1. First call: Cache miss -> executes SQL
+        df1 = self.repo.get_top_products(limit=5)
+        self.assertFalse(df1.empty)
+        self.assertEqual(self.repo._execute_query.call_count, 1)
+
+        # 2. Second call: Cache hit -> returns cached DataFrame without calling DB
+        df2 = self.repo.get_top_products(limit=5)
+        self.assertFalse(df2.empty)
+        self.assertEqual(self.repo._execute_query.call_count, 1)
+        self.assertEqual(df1["stock_code"].tolist(), df2["stock_code"].tolist())
+
 
 if __name__ == "__main__":
     unittest.main()
+

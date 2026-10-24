@@ -34,6 +34,7 @@ class AppConfig:
     secret_key: str = "default-insecure-dev-key"
 
     # Database Settings
+    database_url: Optional[str] = None
     db_host: Optional[str] = None
     db_port: int = 5432
     db_name: Optional[str] = None
@@ -116,17 +117,42 @@ class AppConfig:
         except ValueError as e:
             raise ConfigurationError(f"Invalid database pool configuration integer: {str(e)}")
 
+        raw_db_url = os.getenv("DATABASE_URL")
+        database_url = None
         db_host = os.getenv("DB_HOST")
         db_name = os.getenv("DB_NAME")
         db_user = os.getenv("DB_USER")
         db_password = os.getenv("DB_PASSWORD")
         db_sslmode = os.getenv("DB_SSLMODE", "require")
+
+        if raw_db_url:
+            # Fix postgres:// -> postgresql:// for SQLAlchemy 2.0 compatibility
+            if raw_db_url.startswith("postgres://"):
+                raw_db_url = "postgresql://" + raw_db_url[len("postgres://"):]
+            database_url = raw_db_url
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(database_url)
+                if parsed.hostname and not db_host:
+                    db_host = parsed.hostname
+                if parsed.port and not os.getenv("DB_PORT"):
+                    db_port = parsed.port
+                if parsed.username and not db_user:
+                    db_user = parsed.username
+                if parsed.password and not db_password:
+                    db_password = parsed.password
+                if parsed.path and len(parsed.path) > 1 and not db_name:
+                    db_name = parsed.path.lstrip("/")
+            except Exception:
+                pass
+
         secret_key = os.getenv("SECRET_KEY", "default-insecure-dev-key")
 
         config = cls(
             app_env=app_env,
             log_level=log_level,
             secret_key=secret_key,
+            database_url=database_url,
             db_host=db_host,
             db_port=db_port,
             db_name=db_name,
@@ -148,24 +174,25 @@ class AppConfig:
         """
         Validates configuration consistency.
 
-        :param strict_db: If True, mandates presence of all PostgreSQL credentials.
+        :param strict_db: If True, mandates presence of all PostgreSQL credentials or DATABASE_URL.
         :raises ConfigurationError: If mandatory parameters are missing or insecure.
         """
         if strict_db:
-            missing = []
-            if not self.db_host:
-                missing.append("DB_HOST")
-            if not self.db_name:
-                missing.append("DB_NAME")
-            if not self.db_user:
-                missing.append("DB_USER")
-            if not self.db_password:
-                missing.append("DB_PASSWORD")
+            if not self.database_url:
+                missing = []
+                if not self.db_host:
+                    missing.append("DB_HOST")
+                if not self.db_name:
+                    missing.append("DB_NAME")
+                if not self.db_user:
+                    missing.append("DB_USER")
+                if not self.db_password:
+                    missing.append("DB_PASSWORD")
 
-            if missing:
-                raise ConfigurationError(
-                    f"Production/Staging environment missing required database settings: {', '.join(missing)}"
-                )
+                if missing:
+                    raise ConfigurationError(
+                        f"Production/Staging environment missing required database settings: {', '.join(missing)}"
+                    )
 
             if self.secret_key == "default-insecure-dev-key":
                 raise ConfigurationError("Production environment must not use the default insecure SECRET_KEY.")
@@ -173,8 +200,12 @@ class AppConfig:
     def get_db_url(self) -> str:
         """
         Returns constructed database connection URL.
-        Falls back to local SQLite database if PostgreSQL credentials are incomplete in non-strict mode.
+        Uses database_url if provided, otherwise constructs PostgreSQL URL from credentials,
+        or falls back to local SQLite database if credentials are incomplete in non-strict mode.
         """
+        if self.database_url:
+            return self.database_url
+
         if self.db_host and self.db_user and self.db_password and self.db_name:
             return (
                 f"postgresql://{self.db_user}:{self.db_password}@"
@@ -198,6 +229,7 @@ class AppConfig:
             "app_env": self.app_env,
             "log_level": self.log_level,
             "secret_key": "***MASKED***" if mask_secrets else self.secret_key,
+            "database_url": "***MASKED***" if (mask_secrets and self.database_url) else self.database_url,
             "db_host": self.db_host,
             "db_port": self.db_port,
             "db_name": self.db_name,

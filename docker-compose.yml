@@ -17,10 +17,18 @@ services:
       - SPARK_THRESHOLD_MB=100
       - REDIS_URL=redis://redis:6379/0
       - METRICS_ENABLED=true
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=retaillens_db
+      - DB_USER=retail_admin
+      - DB_PASSWORD=retail_password
+      - DB_SSLMODE=disable
     volumes:
       - .:/app
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
 
   redis:
@@ -33,3 +41,24 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: retaillens_postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=retaillens_db
+      - POSTGRES_USER=retail_admin
+      - POSTGRES_PASSWORD=retail_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U retail_admin -d retaillens_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+

@@ -102,12 +102,16 @@ class DataCleaner:
         imputed_count = 0
 
         if "CustomerID" in df.columns:
+            if not pd.api.types.is_object_dtype(df["CustomerID"]) and not pd.api.types.is_string_dtype(df["CustomerID"]):
+                df["CustomerID"] = df["CustomerID"].astype(object)
             cust_str = df["CustomerID"].astype(str).str.strip().str.upper()
             null_cust = df["CustomerID"].isna() | cust_str.isin(["", "NAN", "NONE", "NULL", "<NA>"])
             imputed_count += null_cust.sum()
             df.loc[null_cust, "CustomerID"] = "GUEST"
 
         if "Description" in df.columns:
+            if not pd.api.types.is_object_dtype(df["Description"]) and not pd.api.types.is_string_dtype(df["Description"]):
+                df["Description"] = df["Description"].astype(object)
             desc_str = df["Description"].astype(str).str.strip().str.upper()
             null_desc = df["Description"].isna() | desc_str.isin(["", "NAN", "NONE", "NULL", "<NA>"])
             imputed_count += null_desc.sum()

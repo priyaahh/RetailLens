@@ -110,3 +110,51 @@ class RetailLensAPI:
                 "message": "Internal Server Error",
                 "error_details": str(e),
             }
+
+
+def create_wsgi_app():
+    """Creates standard WSGI application callable for production HTTP servers (gunicorn, uvicorn, wsgiref)."""
+    import json
+    import urllib.parse
+
+    api = RetailLensAPI()
+
+    def wsgi_app(environ, start_response):
+        path = environ.get("PATH_INFO", "/")
+        query_string = environ.get("QUERY_STRING", "")
+        params = dict(urllib.parse.parse_qsl(query_string))
+
+        status_code, response_dict = api.handle_request(path, params)
+        body_bytes = json.dumps(response_dict, default=str).encode("utf-8")
+
+        status_text = {
+            200: "200 OK",
+            400: "400 Bad Request",
+            404: "404 Not Found",
+            500: "500 Internal Server Error",
+            503: "503 Service Unavailable",
+        }.get(status_code, f"{status_code} Status")
+
+        headers = [
+            ("Content-Type", "application/json"),
+            ("Content-Length", str(len(body_bytes))),
+            ("Access-Control-Allow-Origin", "*"),
+        ]
+        start_response(status_text, headers)
+        return [body_bytes]
+
+    return wsgi_app
+
+
+app = create_wsgi_app()
+
+
+if __name__ == "__main__":
+    import os
+    from wsgiref.simple_server import make_server
+
+    port = int(os.getenv("PORT", os.getenv("API_PORT", 8000)))
+    logger.info("Starting RetailLens REST API server on port %d...", port)
+    with make_server("0.0.0.0", port, app) as httpd:
+        print(f"RetailLens REST API running on http://0.0.0.0:{port}")
+        httpd.serve_forever()
